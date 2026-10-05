@@ -14,7 +14,7 @@ emotion are optional because several real engines return none of them.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 import numpy as np
@@ -22,7 +22,7 @@ import numpy as np
 # ── 引擎能力 / engine capabilities ────────────────────────────────────────────
 
 
-class Capability(str, Enum):
+class Capability(StrEnum):
     """引擎可能具备的能力 / Capabilities an engine may declare.
 
     引擎必须**不加载权重**就能回答自己有哪些能力（GUI/HTTP 的开机选择器要用它
@@ -37,7 +37,7 @@ class Capability(str, Enum):
     EVENTS = "events"                    # 音频事件（笑声/掌声/音乐…）
 
 
-class Emotion(str, Enum):
+class Emotion(StrEnum):
     """SenseVoice 的 7 类情绪 / the 7 emotion labels of SenseVoice.
 
     引擎原始返回形如 `<|NEUTRAL|>`，门面负责解析（见 `engines/sensevoice.py`）。
@@ -131,7 +131,7 @@ class Transcript:
         }
 
     @classmethod
-    def empty(cls, engine: str, duration: float, warning: str) -> "Transcript":
+    def empty(cls, engine: str, duration: float, warning: str) -> Transcript:
         """构造一个「明确为空」的结果（幻觉闸门用）/ build an explicit empty result."""
         return cls(text="", language="", duration=duration, engine=engine,
                    warnings=[warning])

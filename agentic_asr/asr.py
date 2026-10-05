@@ -167,7 +167,7 @@ class ASRModule:
         self._release_all()
         self._vad = None
 
-    def __enter__(self) -> "ASRModule":
+    def __enter__(self) -> ASRModule:
         return self
 
     def __exit__(self, *exc: object) -> None:

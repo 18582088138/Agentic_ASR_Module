@@ -43,9 +43,8 @@ def environment() -> bool:
     section("1/3 环境自检 / environment self-check")
     ok = True
     print(f"python      : {sys.version.split()[0]}  ({PY})")
-    if sys.version_info < (3, 12):
-        print("[FAIL] 需要 Python >= 3.12")
-        ok = False
+    # 版本下限由 `pyproject.toml` 的 `requires-python` 保证，这里不再重复检查
+    # （ruff 的 UP036 就是提示这段判断已经过时）。
 
     print(f"ffmpeg      : {shutil.which('ffmpeg') or '[MISSING]'}")
     print(f"ffprobe     : {shutil.which('ffprobe') or '[MISSING]'}")

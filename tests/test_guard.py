@@ -14,7 +14,6 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from agentic_asr.audio.io import decode
 from agentic_asr.core.types import AudioChunk, Segment, Transcript
 
 

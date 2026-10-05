@@ -39,7 +39,7 @@ class ASREngine(ABC):
     # 是否已经加载了权重（门面据此决定要不要卸载）
     loaded: bool = False
 
-    def __init__(self, config: "ASRConfig") -> None:
+    def __init__(self, config: ASRConfig) -> None:
         self.config = config
 
     # ── 能力 / capabilities ─────────────────────────────────────────────────
@@ -120,10 +120,15 @@ class ASREngine(ABC):
             "capabilities": sorted(c.value for c in self.capabilities()),
         }
 
-    def release(self) -> None:
-        """卸载权重、释放显存（默认无事可做）/ unload weights and free memory."""
+    def release(self) -> None:  # noqa: B027 - 可选钩子：默认无事可做，子类按需覆写
+        """卸载权重、释放显存（默认无事可做）/ unload weights and free memory.
 
-    def __enter__(self) -> "ASREngine":
+        **刻意不是 abstractmethod**：绝大多数引擎没有常驻状态要放，
+        强制每个引擎写一个空实现只是噪音。
+        Deliberately not abstract: most engines hold nothing to release.
+        """
+
+    def __enter__(self) -> ASREngine:
         return self
 
     def __exit__(self, *exc: object) -> None:

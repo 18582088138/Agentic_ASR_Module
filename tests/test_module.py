@@ -20,7 +20,6 @@ from agentic_asr.core.errors import ConfigError
 from agentic_asr.core.registry import available, resolve
 from agentic_asr.core.types import Capability, Segment, Transcript
 
-
 # ── 配置 / configuration ─────────────────────────────────────────────────────
 
 

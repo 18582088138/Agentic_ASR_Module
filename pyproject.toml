@@ -66,3 +66,17 @@ target-version = "py312"
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B"]
 ignore = ["E501"]
+
+[tool.ruff.lint.flake8-bugbear]
+# `def cmd(x: str = typer.Option(...))` 与 `file: UploadFile = File(...)` 分别是
+# typer 与 FastAPI 的**标准写法**，不是 B008 要防的那个「默认值里调函数」的坑：
+# 框架靠这个对象拿帮助文本与校验规则。按 B008 改写会让每个命令/端点多出一段
+# 样板代码，而且与两边的官方文档不一致。
+# typer and FastAPI read these objects for help text and validation; the official style
+# conflicts with B008, so the framework calls are whitelisted rather than rewritten.
+extend-immutable-calls = [
+    "typer.Argument",
+    "typer.Option",
+    "fastapi.File",
+    "fastapi.Form",
+]

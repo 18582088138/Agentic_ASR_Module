@@ -54,7 +54,7 @@ def probe_container(path: str | Path) -> dict[str, Any]:
     proc = subprocess.run(cmd, capture_output=True, check=False)
     if proc.returncode != 0:
         tail = (proc.stderr or b"").decode("utf-8", "replace").strip().splitlines()[-3:]
-        raise DecodeError(f"ffprobe 失败 / ffprobe failed: " + " / ".join(tail))
+        raise DecodeError("ffprobe 失败 / ffprobe failed: " + " / ".join(tail))
     try:
         return json.loads(proc.stdout.decode("utf-8", "replace") or "{}")
     except json.JSONDecodeError as exc:  # pragma: no cover

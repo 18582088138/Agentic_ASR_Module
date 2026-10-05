@@ -145,7 +145,7 @@ def to_ffmpeg_wav(src: str | Path, dst: str | Path, sample_rate: int = 44100,
     proc = subprocess.run(cmd, capture_output=True, check=False)
     if proc.returncode != 0 or not dst_p.is_file():
         tail = (proc.stderr or b"").decode("utf-8", "replace").strip().splitlines()[-4:]
-        raise DecodeError(f"转 wav 失败 / conversion failed: " + " / ".join(tail))
+        raise DecodeError("转 wav 失败 / conversion failed: " + " / ".join(tail))
     return dst_p
 
 

@@ -173,7 +173,7 @@ class FasterWhisperEngine(ASREngine):
             raise EngineError(f"转写失败 / transcription failed: {exc}") from exc
 
         segments: list[Segment] = []
-        for i, seg in enumerate(raw_segments):
+        for seg in raw_segments:
             words = None
             if want_words and getattr(seg, "words", None):
                 words = [Word(text=w.word.strip(), start=float(w.start),

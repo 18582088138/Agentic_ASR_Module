@@ -129,7 +129,7 @@ class OpenAICompatEngine(ASREngine):
 
     def _to_transcript(self, body: dict[str, Any], chunk: AudioChunk) -> Transcript:
         segments: list[Segment] = []
-        for i, item in enumerate(body.get("segments") or []):
+        for item in body.get("segments") or []:
             text = (item.get("text") or "").strip()
             if not text:
                 continue

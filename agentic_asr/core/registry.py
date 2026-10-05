@@ -35,7 +35,7 @@ def available() -> list[str]:
     return sorted(ENGINES)
 
 
-def resolve(name: str) -> type["ASREngine"]:
+def resolve(name: str) -> type[ASREngine]:
     """按名字取引擎类 / resolve an engine class by name.
 
     抛出 / Raises:

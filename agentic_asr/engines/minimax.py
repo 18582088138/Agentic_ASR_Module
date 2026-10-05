@@ -26,7 +26,7 @@ from __future__ import annotations
 import io
 from typing import Any
 
-from agentic_asr.core.errors import APIError, CapabilityError
+from agentic_asr.core.errors import APIError
 from agentic_asr.core.logging import get_logger
 from agentic_asr.core.types import (
     AudioChunk,
