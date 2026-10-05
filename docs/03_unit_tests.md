@@ -110,7 +110,7 @@ C:\Users\75203\miniforge3\envs\ov_env_py312\python.exe tools\check.py
 | 云 API 的**真实**调用 | 无 `live` 用例；靠手工跑一次真音频验证（`test_server_cli.py` 只测错误映射与参数构造） |
 | 说话人分离（diarization） | 第一版只留了能力位，**没有实现**（`01_design.md §10.4`） |
 | 降噪 / 去混响 | 只留配置位，**没有实现**（`01_design.md §10.5`） |
-| 分离插件的功能 | 在 **Agentic_VoiceSeparate_Module** 自己的 `tests/` 里，不在本仓库 |
+| 分离模组的功能 | 在**它自己的仓库**里，不在本仓库 |
 | 语音质量主观听感 | 需要人工听审，无法自动化 |
 
 ---
@@ -129,7 +129,7 @@ C:\Users\75203\miniforge3\envs\ov_env_py312\python.exe tools\check.py
 | V6 参考音频规格 | `test_clip.py` 六条 |
 | V7 云 API 可切换 | **仅手工验证**（无 `live` 用例） |
 | V8 长音频时间轴 | `test_real.py::test_long_audio_timeline` |
-| V9 分离等长 | 在分离插件的 `tests/test_real.py` |
+| V9 分离等长 | 在**分离模组自己仓库**的 `tests/test_real.py` |
 | V10 无语音不产生字幕 | `test_guard.py` 三条 + `test_real.py::test_silence_does_not_hallucinate` |
 | V11 分段行为 | `test_segment.py` 八条 |
-| V12 主体人声去除有效 | 在分离插件的 `tests/test_real.py` |
+| V12 主体人声去除有效 | 在**分离模组自己仓库**的 `tests/test_real.py` |

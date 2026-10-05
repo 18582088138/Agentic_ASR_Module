@@ -13,14 +13,11 @@
 开工前的计划里，本插件**自带**「人声/背景音分离」（原阶段 6）。开发中途用户提出
 要把分离做成**独立的 Agent 插件**，于是：
 
-- 分离能力**整体迁出**到 `Agentic_VoiceSeparate_Module`（独立仓库、独立服务端口 8302）；
-- 本插件**不提供**「自动调用分离插件」的开关 —— 两个插件是独立服务，协作由**调用方**组合：
-  ```python
-  vocals = SeparateModule().extract_vocals("demo.mp4")
-  result = ASRModule().transcribe(vocals.stems["vocals"].path)
-  ```
-  （开发中一度加过 `transcribe.separate` 配置项，但它从未被代码读取，
-  属于会误导人的死配置，已删除。）
+- 分离能力**整体迁出**为**另一个独立模组**（独立仓库、独立端口、独立模型目录）；
+- 本模组**不提供**「自动调用分离模组」的开关 —— 两者相互独立、互不 import，
+  协作由**应用层**组合（跨模组的脚本放 `F:\2026年\Agentic_Pipelines\`，不属于任一模组）；
+- 开发中一度加过 `transcribe.separate` 配置项，但它从未被代码读取 ——
+  属于会误导人的死配置，已删除。
 - 原计划里的 `demucs` 引擎**最终没有采用** —— 选型在那边改成了 sherpa-onnx 的 UVR，
   理由与实测数据记在 `00_research.md §4.2 / §4.4`。
 

@@ -64,7 +64,7 @@ await file.save(str(dest))
    大文件不必整个进内存；
 3. **包一层 try/except**：上传失败只改状态栏，不让整个界面挂掉。
 
-同一个 bug 在 `Agentic_VoiceSeparate_Module` 的 GUI 里也存在（同一份写法），一并修复。
+同一个写法在**另一个模组的 GUI** 里也存在（两边各自修各自的，互不引用）。
 
 ## 回归用例 / Regression
 

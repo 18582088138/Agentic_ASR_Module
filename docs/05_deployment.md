@@ -95,7 +95,7 @@ snapshot_download("iic/SenseVoiceSmall", local_dir="models/SenseVoiceSmall")
 1. **GitHub release 必须用 python `requests` 下。**
    `curl.exe` 在 Windows 上会被 schannel 中断：
    `curl: (56) schannel: server closed abruptly (missing close_notify)`。
-   实测同一 URL 换 `requests` 就正常。Agentic_VoiceSeparate_Module 的权重同理。
+   实测同一 URL 换 `requests` 就正常。下载**别的模组**的权重时同理。
 2. **HF 直连开 VPN 时可达**；不开时用镜像 —— 代码与文档都不写死任何一种网络状态：
 
    ```bash

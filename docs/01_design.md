@@ -6,23 +6,23 @@
 
 ## 1 · 定位 / One-liner
 
-> **两个平级的、可独立部署与独立调用的 Agent 插件。**
-> Two sibling, independently deployable and callable agent plugins.
+> **一个可独立部署与独立调用的 Agent 模组。**
 
-| 插件 | 包 | 回答什么 | 端口 |
+| 模组 | 包 | 回答什么 | 端口 |
 |---|---|---|---|
-| **ASR 插件** | `agentic_asr` | 「这段音频说了什么、怎么说的」 | 8301 |
-| **分离插件** | `agentic_separate` | 「这段音频里哪些声音是哪个成分」 | 8302 |
+| **本模组** | `agentic_asr` | 「这段音频说了什么、怎么说的」 | 8301 |
 
-两者**能力正交**，因此拆成两套平级抽象，而不是塞进一个模块：
+**与声音分离模组的关系**：两者**能力正交** —— 一个答「说了什么」，
+一个答「这段音频里哪些声音是哪个成分」。所以是两个**平级的独立模组**，
+谁都不依赖谁；要一起用就由**应用层**组合，见 §4。
 
-- 一个答「说了什么」，一个答「哪些是人声」；
 - 硬合并会让能力表无法表达（云 API 能做 ASR 但做不了分离，
   分离模型能分轨但不认识字）；
-- 用户明确要求：**两个独立的 Agent 插件，可独立调用，每个功能都要能在
+- 用户明确要求：**独立的 Agent 模组，可独立调用，每个功能都要能在
   service 与 GUI 中作为独立 function 调用**。
 
-**不做**：翻译、配音合成、视频剪辑、音色克隆本身（那是调用方与 Agentic_TTS_Module 的事）。
+**不做**：声音分离（那是另一个模组）、翻译、配音合成、视频剪辑、音色克隆本身
+（其余是调用方与 TTS 模组的事）。
 
 ### 1.1 ASR 插件的五个功能
 
@@ -34,40 +34,33 @@
 | 语音情绪识别 | `engines/sensevoice.py` | 逐段 7 类情绪 + 事件 + 全片汇总 |
 | 参考音频截取 | `clip/picker.py` | 自动挑 10~15 s 干净人声 → wav + 字幕（喂 TTS 克隆） |
 
-### 1.2 分离插件的三个功能
-
-| 功能 | 用什么模型 | 输出 |
-|---|---|---|
-| 人声提取 | UVR 通用/Voc 系 | 人声轨（含所有人声） |
-| 背景音提取 | UVR 通用/Inst 系 | 伴奏轨（去掉所有人声） |
-| **主体人声去除** | **UVR KARA 系** | **去掉主体人声、保留背景人声**的轨 |
-
 ---
 
 ## 2 · 架构总览
 
 ```
 ┌─────────────── 调用方（Agent / 应用 / 人工）───────────────┐
-│   HTTP (8301 / 8302)   ·   CLI   ·   GUI   ·   Python 库   │
+│      HTTP (8301)   ·   CLI   ·   GUI   ·   Python 库      │
 └──────────────────────────┬─────────────────────────────────┘
                            │
-        ┌──────────────────┴──────────────────┐
-        │                                     │
-┌───────▼────────┐                   ┌────────▼────────┐
-│ agentic_asr    │                   │ agentic_separate│
-│ ── 门面        │                   │ ── 门面          │
-│  解码归一       │                   │  wav 44.1k 归一  │
-│  长音频切片+平移 │                   │  轨道顺序判定     │
-│  引擎路由/降级   │                   │  等长校验        │
-│  幻觉闸门       │                   │                  │
-│ ── 引擎        │                   │ ── 引擎          │
-│  faster_whisper│                   │  uvr (sherpa)   │
-│  sensevoice    │                   │  null           │
-│  minimax       │                   │                  │
-│  openai_compat │                   │                  │
-│  mock          │                   │                  │
-└────────────────┘                   └──────────────────┘
-        └──────────── 共享：core/（配置、类型、错误、日志）────────────┘
+                  ┌────────▼────────┐
+                  │  agentic_asr    │   ← 本模组（分离是另一个模组，不在此图内）
+                  │ ── 门面         │
+                  │  解码归一        │
+                  │  长音频切片+平移  │
+                  │  引擎路由/降级    │
+                  │  幻觉闸门        │
+                  │ ── 引擎         │
+                  │  faster_whisper │
+                  │  sensevoice     │
+                  │  minimax        │
+                  │  openai_compat  │
+                  │  mock           │
+                  └─────────────────┘
+                           │
+                  ┌────────▼────────┐
+                  │  core/          │  配置、类型、错误、日志
+                  └─────────────────┘
 ```
 
 **引擎接口一律要窄**：解码、切片、时间轴合并、字幕格式、轨道顺序判定这些
@@ -174,10 +167,17 @@ RMS dBFS、**估计 SNR**、VAD 语音占比、是否削波）。合起来返回
    |---|---|---|
    | 1 | 强停顿（字间静音） | ≥ `pause_gap` 0.28 s |
    | 2 | 句末标点 `。！？…；` | — |
-   | 3 | 加权字数上限 | ≥ `max_chars` 20 |
+   | 3 | **硬**字数上限（无条件切） | ≥ `max_chars × hard_chars_ratio` = 32 |
    | 4 | 单条时长上限 | ≥ `max_seconds` 6 s |
-   | 5 | 弱停顿（达 `min_chars` 才切） | ≥ `soft_gap` 0.12 s |
-   | 6 | 次级标点 `，、,`（达 `min_chars` 才切） | — |
+   | 5 | 软字数上限 **且**落在次级标点上 | ≥ `max_chars` 20 |
+   | 6 | 弱停顿（达 `min_chars` 才切） | ≥ `soft_gap` 0.12 s |
+   | 7 | 次级标点 `，、,`（达 `min_chars` 才切） | — |
+
+   **软硬两级是为了一件事**：中文没有词边界，一到字数就切必然落在某个词中间 ——
+   实测切出过「函 / 数」「基 / 本」。所以到 `max_chars` 只表示「该切了」，
+   还要继续往前走到下一个标点；只有超过 `max_chars × 1.6` 仍然没有标点
+   （长串英文或数字）才无条件切。这条规则与 `Agentic_ASR_Module` 的字幕侧、
+   DailyNewsAssistant 的字幕侧**共用同一套判据**。
 
    中日文按**字符宽度**算行长；英文按**词**折算字数（否则一行英文比一行中文长得多）。
    另有**数字保护**：`零点三|四四米` 这种切法会把数字读坏，禁止在数字内部切。
@@ -240,110 +240,36 @@ RMS dBFS、**估计 SNR**、VAD 语音占比、是否削波）。合起来返回
 
 ---
 
-## 4 · 分离插件设计
+## 4 · 与声音分离模组的关系
 
-### 4.1 引擎抽象
+本模组**不负责**声音分离，也**不调用**任何分离实现 —— 两个模组相互独立，
+只有**应用层**可以同时使用它们（见 `~/.dsh/AGENTS.md` §七）。
 
-```python
-class SeparationEngine(ABC):
-    name: str
-    @classmethod
-    def declared_stems(cls) -> set[str]: ...      # 该引擎能产出的轨
-    def supports_mode(self, mode: SeparationMode) -> bool: ...
-    @abstractmethod
-    def separate(self, chunk: AudioChunk) -> dict[str, np.ndarray]: ...
+**要分离时由应用层组合**，脚本放模组之外：
+
+```
+应用层脚本（不属于任何模组）
+  ├─ 分离模组：提取人声 / 去主体人声
+  └─ 本模组：对分离出来的轨做转写、字幕、情绪
 ```
 
-| 引擎 | 后端 | 模型 | 设备 | 实测 RTF | 显存 | 许可 |
-|---|---|---|---|---|---|---|
-| `uvr`（默认） | sherpa-onnx `OfflineSourceSeparation` | UVR MDX 系 onnx（28–67 MB） | **CPU** | **0.232–0.363**（KARA） | **0** | MIT |
-| `null`（占位） | — | — | — | 即时 | 0 | — |
+**一个必须由应用层决定的取舍**：分离器质量不够时，**先分离再转写会让 WER 变差**——
+有论文实测 SDR 7.97 dB 的分离器会让 WER 一致变差（见 `00_research.md §4.2`）。
+所以本模组**不内建**「自动先分离」的开关：要不要分离、用哪个模型，
+是调用方看着自己素材做的判断，不该由本模组替他默认做掉。
 
-**为什么不用 demucs**（已实测并弃用）：demucs 只能做人声/伴奏二分，
-**无法区分主体人声与背景人声** —— 实测「中文主体 + 英文背景」素材时，
-它把两种人声全塞进 `vocals`，`no_vocals` 只剩 rms 0.0052 的近静音。
-而 sherpa-onnx + UVR 在 **CPU 上比 demucs 在 GPU 上还快**（0.241 vs 0.740）、
-**零新增依赖**、**不占显存**（8 GB 卡整块留给 ASR）。
-（demucs 的实测数据保留在 `00_research.md §4.2` 作为对照。）
+**关系一句话**：它回答「这段音频里哪些声音是哪个成分」，本模组回答「这些声音说了什么」。
+两者的能力正交，所以是两个平级的模组，谁都不依赖谁。
 
-**模型清单**（`models/sherpa-separation/`，gitignore；下载见 `05_deployment.md`）：
-
-| 模型 | 体积 | 用途 |
-|---|---|---|
-| `UVR_MDXNET_KARA.onnx` | 29.7 MB | **主体人声去除**（默认） |
-| `UVR_MDXNET_KARA_2.onnx` | 52.8 MB | 备选 |
-| `UVR_MDXNET_Main.onnx` | 66.8 MB | 人声/背景音提取（通用） |
-| `UVR-MDX-NET-Voc_FT.onnx` | 66.8 MB | 人声提取（人声专用） |
-| `UVR-MDX-NET-Inst_Main.onnx` | 52.8 MB | 背景音提取（伴奏专用） |
-
-### 4.2 人声提取 / 4.3 背景音提取
-
-用通用/Voc/Inst 模型，输出人声轨与伴奏轨。
-**实测（素材=人声+背景音乐）**：stem0 = 人声（rms 0.12，ASR 识别正确）、
-stem1 = 音乐（rms 0.15，ASR 输出 `/Thank you./` 幻觉 = 无语音）。
-⇒ 这两条路径在**正确素材（人声+音乐）**下工作正常。
-
-⚠️ **输入分布边界**：这类模型是为「音乐 + 人声」训练的。喂「人声 + 人声」这种
-分布外输入时表现不稳 —— 低能量的背景人声会被当残差丢掉（实测英文碎成片段）。
-所以「主体 vs 背景人声」必须走 KARA，不能指望通用模型。
-
-### 4.4 主体人声去除（对标用户的「只去主体人声、保留背景人声」）
-
-**实测证明可行**：构造「中文主体（居中）+ 英文背景（偏侧、−10 dB）」素材，
-用 ASR 判读各轨：
-
-| 轨 | rms | ASR 判读 |
-|---|---|---|
-| 原始混音 | 0.1434 | 中文（英文被掩盖） |
-| demucs `vocals` | 0.1428 | 中文 |
-| demucs `no_vocals` | **0.0052** | `pause` → 近静音 |
-| **kara1 `stem0`** | 0.1083 | **中文（主体）** |
-| **kara1 `stem1`** | 0.0651 | **英文（背景）** |
-| kara2 `stem0` | 0.0417 | 英文（背景） |
-| kara2 `stem1` | 0.1336 | 中文（主体） |
-
-**KARA 系确实能把主体与背景人声分到两条轨，即使在说话而非唱歌场景。**
-取「背景」那一轨即为本功能的输出（伴奏 + 背景人声，主体人声已去除）。
-
-> 关于用户设想的「提取人声 → 滤波去背景人声 → 相减」链路：
-> **目标可达，但三步手段都不必用**。
-> ①「滤波」不可行 —— 主体与背景人声频谱完全重叠（都是人声，基频 80–400 Hz、
-> 共振峰 500 Hz–4 kHz），线性滤波无法按「谁在说话」选择；
-> ②「相减」不可靠 —— 实测 `vocals + no_vocals` 与原音频的相对 RMS 误差达
-> **8.06%（rescale）/ 10.63%（none）**，误差来自模型估计本身；
-> ③ KARA 模型直接输出两条轨，**一步到位，不需要相减**。
-
-### 4.5 轨道顺序判定（必须做，不能硬编码）
-
-官方示例写死 `stems[0]=vocals`，但实测 **kara2 的 stem0 是背景**（与官方相反）。
-我一度用「能量更高的是主体轨」判定，**已被自己的复测推翻**：
-素材为「人声+音乐」时音乐轨 rms（0.1533）反而高于人声轨（0.1114）。
-
-⇒ 采用**三级判定**，从可靠到兜底：
-
-1. **模型约定表**（快，静态）：如 `UVR_MDXNET_KARA` → stem0 = 主体；
-2. **VAD 语音占比**（可靠，默认启用）：哪一轨检出语音，哪一轨是主体人声轨；
-3. **配置显式覆盖**（`separate.lead_stem_index`）：用户可强制指定。
-
-判定结果写进返回结构（`SeparationResult.stem_order_resolved_by`），
-便于事后排查，不静默。
-
-### 4.6 等长与采样率（硬约束）
-
-- **输入**：sherpa-onnx UVR **只接受 wav 44.1 kHz 立体声**
-  （官方：`ffmpeg -i in.mp4 -vn -acodec pcm_s16le -ar 44100 -ac 2 out.wav`）。
-  门面负责把任意输入归一到这个格式。
-- **输出**：实测各轨与输入**严格等长**（`shape[1]` 完全一致）。
-  门面仍**强制校验样本数**，不等长就裁剪/补零并写 `warnings` ——
-  时间轴漂移是最隐蔽的 bug。
-- **不做逐轨峰值归一化**：会破坏轨间相对音量；要归一化由调用方显式开。
+> 分离模组的引擎选型、模型清单、实测数据与问题单，都在**它自己的仓库**里写权威。
+> 本文不复制 —— 那些会随对方演进，抄过来必然过期，而且会让人在本仓库里找它们。
 
 ---
 
 ## 5 · 目录结构
 
 ```
-agentic_asr/                    # ── ASR 插件 ──
+agentic_asr/                    # ── 本模组 ──
   core/        config.py types.py registry.py errors.py logging.py
   engines/     base.py faster_whisper.py sensevoice.py minimax.py
                openai_compat.py mock.py
@@ -355,18 +281,15 @@ agentic_asr/                    # ── ASR 插件 ──
   asr.py       门面 ASRModule
   server/ gui/ cli.py
 
-agentic_separate/               # ── 分离插件 ──
-  core/        （复用 agentic_asr.core 的类型与配置基类）
-  engines/     base.py uvr.py null.py
-  separate.py  门面 SeparateModule
-  server/ gui/ cli.py
-
-configs/asr.yaml   configs/separate.yaml   .env.example
+configs/asr.yaml   .env.example
 models/（gitignore）  outputs/（gitignore）
-docs/  tests/  scripts/  third_party/
+docs/  tests/  scripts/  tools/
 ```
 
 单文件 ≤ 500 行；公共 API 与跨层接口**中英双语注释**，内部 helper 用中文。
+
+**跨模组的脚本不在这里**：需要同时调用本模组与分离模组的脚本属于**应用层**，
+放 `F:\2026年\Agentic_Pipelines\`（见 §4 与 `~/.dsh/AGENTS.md` §七）。
 
 ---
 
@@ -430,29 +353,17 @@ preprocess:
 ```
 
 ```yaml
-# configs/separate.yaml
+# configs/asr.yaml（完整清单见该文件本身）
 engine:
-  default: uvr                   # uvr | null
-  uvr:
-    model_dir: models/sherpa-separation
-    num_threads: 4
-    provider: cpu
-    lead_stem_index: null        # null = 自动判定（见 §4.5）
-
-separate:
-  mode: lead_removal             # lead_removal | vocals | accompaniment | both
-  models:
-    lead_removal: UVR_MDXNET_KARA.onnx
-    vocals: UVR-MDX-NET-Voc_FT.onnx
-    accompaniment: UVR-MDX-NET-Inst_Main.onnx
-  output_sample_rate: 44100
-  normalize: false               # 不做逐轨峰值归一化
+  default: faster_whisper        # faster_whisper | sensevoice | minimax | openai_compat | mock
 ```
 
-`.env`：`MINIMAX_API_KEY`（**用户已提供**）、`ASR_API_ENDPOINT`、`ASR_ENGINE`、
-`ASR_DEVICE`、`ASR_MODELS_DIR`、`ASR_OUTPUT_DIR`、`ASR_SERVER_PORT=8301`、
-`SEPARATE_SERVER_PORT=8302`。凭证只从**本项目自己的** `.env` 读，不跨目录读 TTS 的 key；
-终端/日志/文档/截图里的密钥一律打码。
+> **分离模组的配置不在本仓库**：它的 `configs/*.yaml` 与 `.env` 项在**它自己的仓库**里
+> 写权威。本模组只认上面这些配置项 —— 两者不共享配置文件，也不共享 `.env`。
+
+`.env`：`MINIMAX_API_KEY`（**用户已提供**）、`ASR_ENGINE`、`ASR_DEVICE`、
+`ASR_MODELS_DIR`、`ASR_OUTPUT_DIR`、`ASR_SERVER_PORT=8301`。凭证只从**本项目自己的**
+`.env` 读，不跨目录读别的模组的 key；终端/日志/文档/截图里的密钥一律打码。
 
 ---
 
@@ -467,31 +378,22 @@ r       = asr.transcribe("demo.mp4", words=True, emotion=True)
 r.to_srt("outputs/demo.srt")                          # ③ 字幕
 clip    = asr.clip_reference("demo.mp4", top=3)       # ④ 参考音频（喂 TTS）
 asr.release()
-
-from agentic_separate import SeparateModule
-sep = SeparateModule()
-v  = sep.extract_vocals("demo.mp4")                   # 人声提取
-bg = sep.extract_accompaniment("demo.mp4")            # 背景音提取
-lead_removed = sep.remove_lead_vocal("demo.mp4")      # 主体人声去除
-sep.release()
 ```
+
+**要连分离模组一起用，写在应用层脚本里**（不在本仓库，见 §4）：
 
 | 功能 | 库 | CLI | HTTP |
 |---|---|---|---|
-| ASR 体检 | `asr.doctor()` | `asr doctor` | `GET /healthz` |
+| 体检 | `asr.doctor()` | `asr doctor` | `GET /healthz` |
 | 引擎表 | `asr.engines()` | `asr engines` | `GET /engines` |
 | ① 信息提取 | `probe()` | `asr probe <media>` | `POST /probe` |
 | ② 音频分段 | `segment()` | `asr segment <media>` | `POST /segment` |
 | ③ 字幕生成 | `transcribe()` / `to_srt()` | `asr transcribe <media> --srt out.srt` | `POST /transcribe` |
 | ④ 情绪识别 | `transcribe(emotion=True)` | `--emotion` | 同上 |
 | ⑤ 参考音频 | `clip_reference()` | `asr clip <media> --top 3` | `POST /clip` |
-| 分离·人声 | `extract_vocals()` | `separate vocals <media>` | `POST /vocals` |
-| 分离·背景音 | `extract_accompaniment()` | `separate accompaniment <media>` | `POST /accompaniment` |
-| 分离·去主体 | `remove_lead_vocal()` | `separate lead-removal <media>` | `POST /lead-removal` |
 
 **每个功能都是独立 endpoint / 独立 GUI 面板**，可单独调用，不要求走完整流水线。
-服务：`python -m agentic_asr.server`（8301）、`python -m agentic_separate.server`（8302）；
-GUI：`python -m agentic_asr.gui`、`python -m agentic_separate.gui`。
+服务：`python -m agentic_asr.server`（8301）；GUI：`python -m agentic_asr.gui`。
 
 ---
 
@@ -543,9 +445,8 @@ V1–V6、V11 离线可验；V9/V12 用合成素材可离线验；V7/V8 需真�
 4. **说话人分离（diarization）第一版只留能力位**：中文首选 3D-Speaker/CAM++ 是
    「VAD+嵌入+聚类」组合而非开箱 pipeline。云端的 MiniMax 自带 diarization 可先用。
 5. **降噪/去混响只留配置位**，第一版不实现。
-6. **不内建自动分离**：分离由独立插件 `Agentic_VoiceSeparate_Module` 承担，
-   协作由**调用方**组合（先 `extract_vocals()`，再把 vocals 轨喂进 `transcribe()`）。
-   有论文实测 SDR 7.97 dB 的分离器会让 WER 一致变差（见 `00_research.md §4.2`），
-   所以也不该默认替用户做「先分离」这个决定。
+6. **不内建自动分离**：分离由**另一个模组**承担，协作由**应用层**组合
+   （脚本放模组之外，见 §4）。有论文实测 SDR 7.97 dB 的分离器会让 WER 一致变差
+   （见 `00_research.md §4.2`），所以也不该默认替用户做「先分离」这个决定。
 7. **「主体人声去除」的预期要写清**：主体与背景**同时说话**的重叠段无法完美分离，
    交付说明里要写明「显著衰减主体人声」而非「彻底移除」。

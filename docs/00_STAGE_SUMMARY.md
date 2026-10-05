@@ -34,19 +34,14 @@ python tools/check.py                # 环境自检 + ruff + 全量测试
 
 **两个平级的、可独立部署与调用的 Agent 插件**，本仓库是 ASR 侧：
 
-| 插件 | 仓库 | 包 | 功能 | 端口 |
+| 模组 | 仓库 | 包 | 功能 | 端口 |
 |---|---|---|---|---|
-| **ASR** | 本仓库 | `agentic_asr` | 音频信息提取 · 音频分段 · 字幕生成 · 语音情绪识别 · 参考音频截取 | 8301 / GUI 8401 |
-| 分离 | `F:\2026年\Agentic_VoiceSeparate_Module` | `agentic_separate` | 人声提取 · 背景音提取 · 主体人声去除 | 8302 / GUI 8402 |
+| **本模组** | 本仓库 | `agentic_asr` | 音频信息提取 · 音频分段 · 字幕生成 · 语音情绪识别 · 参考音频截取 | 8301 / GUI 8401 |
 
 四种用法共用同一个门面：Python 库 · CLI(`asr …`) · HTTP · GUI。
 
-**两个插件互不依赖**，协作由调用方组合：
-
-```python
-vocals = SeparateModule().extract_vocals("demo.mp4")
-result = ASRModule().transcribe(vocals.stems["vocals"].path)
-```
+**与声音分离模组的关系**：两者互不依赖、互不 import，协作由**应用层**组合
+（跨模组的脚本放 `F:\2026年\Agentic_Pipelines\`，不属于任一模组）。
 
 ---
 
@@ -58,8 +53,8 @@ result = ASRModule().transcribe(vocals.stems["vocals"].path)
 | 情绪走 **sherpa-onnx（CPU）**，不用 funasr | `00_research.md §4.4`：原生返回 `emotion`/`event`/`lang`，比 funasr 少 16 个包，且不占显存 |
 | 自己写解码层，**引擎永不接收文件路径** | `issues/001`：faster-whisper 1.2.1 与 av 19 不兼容 |
 | 无语音输入**不进引擎** | `issues/002`：实测纯音乐会被编出「优优独播剧场」，且置信度 `p=1.000` |
-| 分离交给独立插件 | `02_dev_plan.md §1`：用户要求做成两个独立插件 |
-| 不内建「自动调用分离插件」 | `01_design.md §10.6`：分离质量差会让 WER 变差，不该替用户默认做这个决定 |
+| 分离交给**另一个独立模组** | `02_dev_plan.md §1`：两个能力正交的模组，各自独立 |
+| 不内建「自动调用分离模组」 | `01_design.md §10.6`：分离质量差会让 WER 变差，不该替用户默认做这个决定 |
 
 ---
 
@@ -71,7 +66,7 @@ result = ASRModule().transcribe(vocals.stems["vocals"].path)
 | 002 | 纯音乐轨被编出假字幕 | **静默**，产出假内容 |
 | 003 | Silero VAD 必须分块喂 + 边喂边取 | **静默**，毁掉三处功能 |
 | 004 | GPU 推理隐式依赖 torch 被导入（CTranslate2 不带 cublas） | **环境相关**，同一脚本换个入口就崩 |
-| 005 | 分离轨道顺序不能硬编码（在分离插件仓库） | **静默**，方向判反 |
+| 005 | 分离轨道顺序不能硬编码（属**另一个模组**的仓库） | **静默**，方向判反 |
 | 006 | NiceGUI 3.x 的上传事件没有 `name` | 用户实测撞到 |
 
 ---

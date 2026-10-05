@@ -122,13 +122,12 @@ class TranscribeConfig(BaseModel):
     min_speech_ratio: float = 0.02
     max_compression_ratio: float = 12.0
     chunk_seconds: float = 480.0    # 云 API 上限留余量
-    # 注意 / note：这里**没有**「自动调用分离插件」的开关。
-    # 两个插件是独立的服务，协作由**调用方**组合完成：
-    #   sep = SeparateModule(); vocals = sep.extract_vocals(x)
-    #   asr = ASRModule();       asr.transcribe(vocals.stems["vocals"].path)
-    # 放一个本模块不读的配置项，只会让人以为设了它就自动分离。
-    # No auto-separation switch here on purpose: the two plugins are separate
-    # services and are composed by the caller.
+    # 注意 / note：这里**没有**「自动调用分离模组」的开关。
+    # 两个模组相互独立、谁也不 import 谁，协作由**应用层**组合完成
+    # （跨模组的脚本放 `F:\2026年\Agentic_Pipelines\`，见 01_design.md §4）。
+    # 放一个本模组不读的配置项，只会让人以为设了它就自动分离。
+    # No auto-separation switch here on purpose: the modules are independent and are
+    # composed by the application layer, never by importing one another.
 
 
 class SegmentConfig(BaseModel):

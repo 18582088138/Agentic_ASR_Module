@@ -7,8 +7,10 @@
 
 **开发已完成**，`tools/check.py` 全绿（数字现跑，别信任何写死的条数）。
 
-本仓库是 **ASR 插件**；分离插件是**另一个仓库** `F:\2026年\Agentic_VoiceSeparate_Module`，
-两者互不依赖（不同包、不同端口、不同模型目录），协作由调用方组合。
+本仓库是**声音转写模组**（`agentic_asr`）。它与**声音分离模组**是两个相互独立、
+**谁都不 import 谁**的模组：不同包、不同端口、不同模型目录、不同 `.env`。
+要一起用由**应用层**组合，跨模组的脚本统一放 `F:\2026年\Agentic_Pipelines\`
+（见 `docs/01_design.md §4` 与 `~/.dsh/AGENTS.md` §七）。
 
 剩下的是**人工动作**，AI 不做：
 
@@ -49,14 +51,8 @@ python tools/check.py                    # 收尾闸口：环境自检 + ruff + 
 asr doctor / engines / probe / segment / transcribe / clip / serve / gui
 ```
 
-```bash
-cd F:\2026年\Agentic_VoiceSeparate_Module
-python -m pytest tests -q                # 离线
-python -m pytest tests -q -m real        # 真实 UVR 权重（约 30 秒）
-python tools/check.py
-
-separate doctor / engines / vocals / accompaniment / lead-removal / run / serve / gui
-```
+跨模组的脚本**不在本仓库** —— 它们属于应用层，放 `F:\2026年\Agentic_Pipelines\`
+（见 `docs/01_design.md §4`）。本模组自己的命令全在上面这一块。
 
 ## 实测数字（不要凭印象改默认值）
 
