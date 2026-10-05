@@ -1,0 +1,101 @@
+# Agentic_ASR_Module —— 配置 / configuration
+#
+# 优先级 / priority: 进程环境变量 > .env > 本文件 > 代码内置默认值
+# 每段都能被 .env 里的 ASR_* 变量覆盖（见 .env.example）。
+
+engine:
+  # faster_whisper | sensevoice | minimax | openai_compat | mock
+  # mock 零依赖、离线可跑，适合先验证界面与接口
+  default: faster_whisper
+  # 8 GB 卡：换引擎时先卸再载，避免两份权重互相挤（实测 turbo 占 2.17 GB）
+  max_resident: 1
+
+  faster_whisper:
+    model_dir: models/faster-whisper-large-v3-turbo
+    device: cuda            # cuda | cpu | auto
+    compute_type: float16   # CPU 上会自动改 int8
+    beam_size: 5
+    vad_filter: false
+    # 单次送引擎的最长音频；门面据此切片，压住长音频的显存峰值
+    max_chunk_seconds: 300.0
+    cpu_fallback: true
+
+  # 情绪/事件/语种走 sherpa-onnx（CPU）。实测它原生返回 emotion 与 event 字段，
+  # 比 funasr 少 16 个依赖包，且不占显存。
+  sensevoice:
+    model_dir: models/sherpa-sensevoice
+    model_file: model.int8.onnx
+    tokens_file: tokens.txt
+    num_threads: 4
+    provider: cpu
+    use_itn: true
+    language: auto
+
+  minimax:
+    # 【实测】本 key 只在国内端点有效；api.minimax.io 返回 401
+    endpoint: https://api.minimaxi.com
+    model: asr-1.0
+    max_seconds: 480.0          # 官方上限 500 s，留余量
+    max_bytes: 50331648         # 48 MB（官方上限 50 MB）
+    timeout: 300.0
+
+  # 一个适配器覆盖 OpenAI / Groq / 硅基流动 / OpenRouter
+  openai_compat:
+    base_url: ""
+    model: whisper-1
+    supports_word_timestamps: null   # null = 未知；按「带上参数试一次」处理
+    supports_srt: false
+    max_bytes: 25165824              # 24 MB（OpenAI 上限 25 MB）
+    timeout: 300.0
+
+transcribe:
+  language: auto            # auto | zh | en | ja | ...
+  word_timestamps: true
+  emotion: auto             # auto（能出就出）| off | always
+  diarization: false        # 能力位：第一版未实现
+  # 幻觉闸门：语音占比低于此值直接返回空，不调用引擎（实测可防「优优独播剧场」类假字幕）
+  min_speech_ratio: 0.02
+  max_compression_ratio: 12.0
+  chunk_seconds: 480.0
+  # 这里没有「自动调用分离插件」的开关：两个插件是独立服务，
+  # 协作由调用方组合（先 SeparateModule.extract_vocals，再把 vocals 轨喂给本模块）。
+
+segment:
+  max_seconds: 30.0         # 单片上限（静音点优先，超长才硬切）
+  min_seconds: 0.5          # 太短的片并入相邻片
+  merge_gap: 0.30           # 小于此间隔的语音区间先合并
+  pad: 0.10                 # 片两侧留白，防止切掉辅音
+  export_audio: false
+
+subtitle:
+  formats: [srt]
+  max_line_chars: 20        # 每行折行宽度（中日文按字符宽度）
+  # ── 断句：这些是观感旋钮，调小 max_chars 会让字幕更短更碎 ──
+  max_chars: 20             # 加权字数上限（中文按字、英文按词 × chars_per_word）
+  min_chars: 12             # 达到它才允许在弱边界切，避免切出两三个字的碎片
+  pause_gap: 0.28           # 字间静音达到它 → 必切（换气处）
+  soft_gap: 0.12            # 字间静音达到它且已达 min_chars → 可切
+  merge_below_seconds: 0.9  # 短于此的尾条并入上一条，否则会一闪而过
+  max_seconds: 6.0          # 单条最长时长，超过则强切
+  chars_per_word: 4.0       # 纯英文时每词折算的字符数
+
+clip:
+  target_seconds: 12.0
+  min_seconds: 10.0
+  max_seconds: 15.0
+  top: 3
+  sample_rate: 16000
+  weights:
+    speech_ratio: 0.35
+    duration: 0.25
+    snr: 0.25
+    boundary: 0.15
+
+preprocess:
+  # 注意：必须加引号。YAML 1.1 会把裸写的 off/on/yes/no 解析成布尔值。
+  denoise: "off"            # off | auto | on（第一版只留配置位，不实现）
+  snr_threshold_db: 15.0
+
+server:
+  host: 127.0.0.1
+  port: 8301
