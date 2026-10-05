@@ -78,6 +78,10 @@ subtitle:
   merge_below_seconds: 0.9  # 短于此的尾条并入上一条，否则会一闪而过
   max_seconds: 6.0          # 单条最长时长，超过则强切
   chars_per_word: 4.0       # 纯英文时每词折算的字符数
+  # 硬上限的倍数：到 max_chars 只是「该切了」，继续走到下一个标点才切；
+  # 超过 max_chars × 这个倍数仍无标点，才无条件切（中文没有词边界，
+  # 一到字数就切会切出「函 / 数」这种半个词的字幕）
+  hard_chars_ratio: 1.6
 
 clip:
   target_seconds: 12.0

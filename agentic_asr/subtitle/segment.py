@@ -57,6 +57,14 @@ class SegmentParams:
     merge_below_seconds: float = 0.9   # 短于此的尾条并入上一条
     max_seconds: float = 6.0      # 单条最长时长，超过强切
     chars_per_word: float = 4.0   # 纯英文时每词折算的字符数
+    # 硬上限的倍数：达到 `max_chars` 只是「该切了」，超过这个倍数才**无条件切**
+    #
+    # 这个区分是为了不再切出「函 / 数」「基 / 本」这种半个词的字幕：中文没有词边界，
+    # 一到字数就切必然落在某个词中间。达到软上限之后继续往前走到下一个标点，
+    # 切口才落在词与词之间。
+    # A soft ceiling that waits for punctuation reads far better than a hard cut at an
+    # arbitrary character, which splits Chinese words in half.
+    hard_chars_ratio: float = 1.6
     # 单元语速上限（字/秒），用来识别**异常长的单元**。
     # ASR 常把后面的静音归给某个字（实测 faster-whisper 把 11.68 s 静音挂在
     # 一个「上」字上），先按这个上限截断，多出来的部分才会变成「间隙」，
@@ -65,7 +73,7 @@ class SegmentParams:
     unit_cap_slack: float = 0.4   # 单元时长上限的余量（秒）
 
     @classmethod
-    def from_config(cls, cfg: Any) -> "SegmentParams":
+    def from_config(cls, cfg: Any) -> SegmentParams:
         """从 `SubtitleConfig` 取参数 / build from the config object."""
         if cfg is None:
             return cls()
@@ -82,6 +90,7 @@ class SegmentParams:
             max_seconds=float(get("max_seconds", 6.0)),
             chars_per_word=float(get("chars_per_word", 4.0)),
             chars_per_second=float(get("chars_per_second", 4.0)),
+            hard_chars_ratio=float(get("hard_chars_ratio", 1.6)),
         )
 
 
@@ -197,14 +206,22 @@ def segment_units(units: list[Unit], params: SegmentParams | None = None,
         splits_number = last in _NUMERIC and nxt_first in _NUMERIC
 
         strong_end = last in SENTENCE_END
-        over_chars = buf_len >= p.max_chars
+        # **软上限只是「该切了」，硬上限才是「必须切」**：中文没有词边界，
+        # 一到字数就切必然落在某个词中间（实测切出过「函 / 数」「基 / 本」）。
+        # 到软上限后继续往前走到下一个次级标点，切口才落在词与词之间。
+        # The soft ceiling waits for punctuation; only the hard ceiling cuts blind.
+        soft_over = buf_len >= p.max_chars
+        hard_over = buf_len >= p.max_chars * p.hard_chars_ratio
         too_long = (buf[-1].end - buf[0].start) >= p.max_seconds
         hard_pause = nxt_gap >= p.pause_gap
         soft_pause = nxt_gap >= p.soft_gap and buf_len >= p.min_chars
         weak_end = last in CLAUSE_END and buf_len >= p.min_chars
 
-        must_break = strong_end or over_chars or too_long
-        may_break = (hard_pause or soft_pause or weak_end) and not splits_number
+        must_break = strong_end or hard_over or too_long
+        may_break = (
+            (soft_over and last in CLAUSE_END)
+            or hard_pause or soft_pause or weak_end
+        ) and not splits_number
         if must_break or may_break:
             flush()
 
@@ -310,19 +327,25 @@ def _segments_from_text(seg: Segment, p: SegmentParams) -> list[Cue]:
 
 
 def _split_text_chunks(text: str, p: SegmentParams) -> list[str]:
-    """按标点与字数切文本（不看时间）/ split text by punctuation and length only."""
+    """按标点与字数切文本（不看时间）/ split text by punctuation and length only.
+
+    **两级上限**：到 `max_chars` 后继续往前走，只有超过
+    `max_chars * hard_chars_ratio` 才无条件切 —— 与 `segment_units` 同一个道理，
+    这里没有时间戳可用，切口更依赖标点。
+    """
+    hard = p.max_chars * p.hard_chars_ratio
     chunks: list[str] = []
     buf = ""
     for ch in text:
         buf += ch
-        over = weight(buf, p.chars_per_word) >= p.max_chars
+        current = weight(buf, p.chars_per_word)
         if ch in SENTENCE_END:
             chunks.append(buf)
             buf = ""
-        elif ch in CLAUSE_END and weight(buf, p.chars_per_word) >= p.min_chars:
+        elif ch in CLAUSE_END and current >= p.min_chars:
             chunks.append(buf)
             buf = ""
-        elif over:
+        elif current >= hard:
             chunks.append(buf)
             buf = ""
     if buf:

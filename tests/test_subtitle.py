@@ -101,7 +101,7 @@ def test_numeric_protection_keeps_numbers_whole() -> None:
 
     这是上游那份切分逻辑里最容易被忽略、也最值得抄过来的一条。
     """
-    from agentic_asr.subtitle.segment import SegmentParams, segment_units, Unit
+    from agentic_asr.subtitle.segment import SegmentParams, Unit, segment_units
 
     units = [Unit(start=i * 0.1, end=i * 0.1 + 0.1, text=ch)
              for i, ch in enumerate("零点三四四米")]
@@ -133,6 +133,55 @@ def test_short_cue_is_merged_into_previous() -> None:
     # merge_below_seconds 设大，逼它合并
     cues = resegment([seg], cfg=SegmentParams(merge_below_seconds=5.0))
     assert len(cues) == 1, f"过短的尾条应被合并，实际：{[c.text for c in cues]}"
+
+
+def test_soft_ceiling_waits_for_punctuation() -> None:
+    """**到软上限后继续走到下一个标点**，而不是就地切。
+
+    中文没有词边界，一到字数就切必然落在某个词中间 —— 实测切开过
+    「函 / 数」「基 / 本」。这条规则是从 DailyNewsAssistant 的字幕侧移过来的。
+    """
+    from agentic_asr.subtitle.segment import SegmentParams, Unit, segment_units
+
+    text = "前面铺垫一句话，后面这句很长但没有内部标点所以只能等到硬上限"
+    units = [Unit(start=i * 0.2, end=i * 0.2 + 0.2, text=ch) for i, ch in enumerate(text)]
+    params = SegmentParams(max_chars=10, min_chars=4, hard_chars_ratio=3.0,
+                           pause_gap=99.0, soft_gap=99.0, max_seconds=99.0)
+    cues = segment_units(units, params)
+    assert cues
+    # 第一个逗号在「话，」处（第 8 字之后）—— 软上限之前就到过它，
+    # 但那时还没到 min_chars 之外的软上限，所以真正的切点应当在逗号上
+    assert cues[0].text.endswith("，"), f"没有在标点处切：{cues[0].text!r}"
+
+
+def test_hard_ceiling_is_the_last_resort() -> None:
+    """整串没有标点时，只有到**硬上限**才切 —— 不是一到软上限就切。
+
+    软上限 8、硬上限 24：20 字的无标点长串应当**原样保留为一条**。
+    """
+    from agentic_asr.subtitle.segment import SegmentParams, Unit, segment_units
+
+    text = "这串文字完全没有标点" * 2      # 20 字，一个标点都没有
+    units = [Unit(start=i * 0.2, end=i * 0.2 + 0.2, text=ch) for i, ch in enumerate(text)]
+    params = SegmentParams(max_chars=8, min_chars=4, hard_chars_ratio=3.0,
+                           pause_gap=99.0, soft_gap=99.0, max_seconds=99.0)
+    cues = segment_units(units, params)
+    assert len(cues) == 1, f"不该在软上限处切开：{[c.text for c in cues]}"
+    assert cues[0].text == text, "整串短于硬上限，应当原样保留"
+
+
+def test_hard_ceiling_does_cut_when_there_is_no_punctuation_at_all() -> None:
+    """没有标点可等时，硬上限就是最后一道闸 —— 否则会攒出一条无限长的字幕。"""
+    from agentic_asr.subtitle.segment import SegmentParams, Unit, segment_units
+
+    text = "这串文字完全没有标点而且长到超过了硬上限所以必须切开" * 2   # 50 字
+    units = [Unit(start=i * 0.2, end=i * 0.2 + 0.2, text=ch) for i, ch in enumerate(text)]
+    params = SegmentParams(max_chars=8, min_chars=4, hard_chars_ratio=3.0,
+                           pause_gap=99.0, soft_gap=99.0, max_seconds=99.0)
+    cues = segment_units(units, params)
+    assert len(cues) > 1, "超过硬上限还不切，会攒出一条读不完的字幕"
+    assert all(len(c.text) <= 24 for c in cues[:-1]), \
+        f"除尾条外不该超过硬上限：{[len(c.text) for c in cues]}"
 
 
 def test_timeline_stays_monotonic() -> None:
