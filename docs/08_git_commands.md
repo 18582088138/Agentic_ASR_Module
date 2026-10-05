@@ -1,146 +1,109 @@
-# 08 · Git 提交指令汇总（人工执行）
+# 待执行的提交命令
 
-> **AI 不执行 `git commit` / `git push`**，本文件交人工执行。
-> 仓库已 `git init`、`git add` 过但**还没有任何 commit**（`master` 分支为空），
-> 所以这是**首次提交**，按功能拆成 9 组。
+> **这个文件是一次性的。** 每次覆写，只留当前这一组；上一组的内容在 `git log` 里。
+>
+> **覆写前必须先 `git log` 核对上一组是否已执行。** 本次核对结果（2026-10-05）：
+> 上一组「字幕优化与 lint 清理」**已全部执行**（`88f0258` → `d9464a3` 之后的那批）。
+> 故本次覆写是安全的；当前这一组是**模组解耦 + 字幕软/硬上限 + lint 清理**，共 4 个 commit。
+>
+> `git add` 一律写明路径，**不用 `-A`**：`.env` 有密钥、`models/` 有权重、
+> `outputs/` 有几百 MB 产物，它们由 `.gitignore` 挡住。
+> hook 会拦下 `git commit` / `git push` —— 这些命令由人工执行。
 
-**提交前务必确认**：
+**提交前核对**：
 
 ```bash
-git status --short          # 不应出现 .env / models/ / outputs/ / *.onnx
-git status --ignored --short | head -20    # 这些应当被忽略
+git status --short              # 只应有本组列出的那些文件
+python tools/check.py           # 唯一的闸：ruff + 全量测试 + 环境自检
 ```
 
-看到 `.env` 或权重进了暂存区，说明 `.gitignore` 被改动过，**先停下来查**。
-
-commit 类型前缀用英文（feat / fix / docs / test / chore / refactor），正文用中文。
+commit 类型前缀用英文，正文用中文。
 
 ---
 
-## 步骤 1/9 · 工程骨架与依赖
+## ① 模组解耦：跨模组的脚本移出，文档不再直接引用
 
 ```bash
 git reset
-git add pyproject.toml .gitignore .env.example tools/ .dsh/
-git commit -m "chore: 工程骨架与依赖
+git add README.md agentic_asr/core/config.py \
+  docs/00_INDEX.md docs/00_STAGE_SUMMARY.md docs/00_research.md docs/01_design.md \
+  docs/02_dev_plan.md docs/03_unit_tests.md docs/05_deployment.md docs/09_dev_log.md \
+  docs/PROJECT_MEMORY.md docs/issues/006-nicegui-3-upload-event-has-no-name.md \
+  scripts/_smoke_pipeline.py scripts/_probe_separate.py \
+  scripts/_probe_separation_sherpa.py scripts/_probe_leadvocal.py
+git commit -m "refactor: 与声音分离模组解耦，跨模组的脚本移出或删除
 
-- pyproject.toml: 依赖只加 faster-whisper 与 sherpa-onnx；av 钉 <19（见 issues/001）
-- tools/check.py: 收尾闸口（环境自检 + ruff + 全量测试）
-- .dsh/skills/agentic-asr-dev: 分层边界与三个静默陷阱"
+按守则「模组之间不许互相指引」清理。三种形态各自处理：
+
+- **跨模组脚本移出**：scripts/_smoke_pipeline.py 同时 import 两个模组，
+  它属于**应用层**，已移到 F:\\2026年\\Agentic_Pipelines\\（连同它要用的
+  样例素材，不再从本仓库的 models/ 里取）
+- **放错位置的探针删除**：scripts/ 下三个**属于分离模组**的调研探针
+  （demucs 可行性、sherpa UVR 实测、主体/背景人声区分）——
+  它们的调研任务已完成，结论分别落盘在 00_research.md §4.2/§4.4 与
+  分离模组自己的文档里，脚本本身没有保留价值
+- **文档直接引用**：删掉 01_design.md 里整节「分离插件设计」（引擎抽象、
+  模型清单、轨道判定、等长约束 —— 那是**另一个模组的设计正文**）、
+  目录结构里的 agentic_separate/、API 示例与端口表里的分离条目
+- **注释示例**：core/config.py 里那段可直接照抄的 SeparateModule() 调用删掉，
+  改成说明「由应用层组合」
+
+保留的是**关系说明**（不指名道姓、不给 API）：两者能力正交、互不依赖，
+要一起用由应用层组合、脚本放模组之外。跨模组的事实只在它自己的仓库写权威。
+
+顺带清掉几处已过时的自述：不再自称「两个插件」，configs 不再列 separate.yaml，
+.env 不再提 SEPARATE_SERVER_PORT。"
 ```
 
-## 步骤 2/9 · 调研、方案与项目记忆
+## ② 字幕：字数上限从「硬切」改成软/硬两级
 
 ```bash
 git reset
-git add README.md docs/00_INDEX.md docs/00_STAGE_SUMMARY.md docs/PROJECT_MEMORY.md docs/00_research.md docs/01_design.md docs/10_reference_research.md
-git commit -m "docs: 调研、方案与项目记忆
+git add agentic_asr/subtitle/segment.py configs/asr.yaml tests/test_subtitle.py \
+  docs/issues/007-asr-hides-silence-in-a-single-unit.md
+git commit -m "fix(subtitle): 字数上限改成软/硬两级，不再切在词中间
 
-- 00_research.md: API/Local ASR 选型与本机实测（RTF/显存/中英日识别、分离实测）
-- 01_design.md: 两个平级插件、能力表、五个功能落点、验收标准 V1-V12；
-  §3.5 记录字幕的六条切分规则与两个反直觉的坑
-- 10_reference_research.md: 声音角色区分/降噪/配音技术栈（仅备查）
-- PROJECT_MEMORY.md: 环境、常用命令、硬约束、踩过的六个坑"
+- 原判据是 buf_len >= max_chars 就切，不看下一个字符是不是标点 ——
+  中文没有词边界，实测切出过「函 / 数」「基 / 本」
+- 现在到 max_chars 只表示「该切了」，还要继续往前走到下一个标点；
+  超过 max_chars × hard_chars_ratio（默认 1.6，即 32 字）仍无标点才无条件切
+- 两处都改：segment_units()（走字级时间戳的主路径）与
+  _split_text_chunks()（无时间戳的回退路径，此前同样是硬切）
+- hard_chars_ratio 进 SegmentParams 与 configs/asr.yaml，可调
+- 01_design §3.5 的规则表从六条改为七条；issues/007 补记这一半问题
+- 新增三条回归用例：软上限等到标点 / 无标点时短串保留 / 超过硬上限必切"
 ```
 
-## 步骤 3/9 · 核心层、音频层与配置
+## ③ lint 清理（ruff 第一次跑全仓发现的历史遗留）
 
 ```bash
 git reset
-git add agentic_asr/__init__.py agentic_asr/core/ agentic_asr/audio/ configs/
-git commit -m "feat(core): 配置、类型、异常、注册表与音频层
+git add pyproject.toml tools/check.py agentic_asr/core/types.py \
+  agentic_asr/engines/base.py agentic_asr/engines/faster_whisper.py \
+  agentic_asr/engines/openai_compat.py agentic_asr/asr.py agentic_asr/audio/io.py \
+  agentic_asr/core/registry.py agentic_asr/engines/minimax.py agentic_asr/engines/mock.py \
+  agentic_asr/gui/app.py agentic_asr/media/probe.py \
+  tests/test_guard.py tests/test_module.py tests/test_server_cli.py
+git commit -m "chore: 清掉 ruff 的历史遗留告警
 
-- 自控解码：引擎只接受 AudioChunk，永不接受文件路径（issues/001）
-- VAD: Silero 必须分块喂且边喂边取，否则静默漏检/丢段（issues/003）
-- cuda.py: 显式注册 CUDA 运行库，去掉对 torch 的隐式依赖（issues/004）
-- gpu.py: 显存一律用 nvidia-smi 读，不用 torch.cuda.*
-- SubtitleConfig: 断句参数（max_chars/min_chars/pause_gap/soft_gap/
-  merge_below_seconds/max_seconds/chars_per_word）"
+- pyproject.toml 补 ruff 配置：typer 与 FastAPI 的 Option/File/Form 进
+  extend-immutable-calls —— 那是两个框架的标准写法，B008 要防的不是它们，
+  B027 的 ASREngine.release 同样是「可选钩子」而非漏写的 abstractmethod
+- tools/check.py 删掉重复的 Python 版本判断（requires-python 已保证）
+- 真 bug 只有三处：未使用的 import（死代码）
+- 其余是风格与现代化：import 排序、typing.Callable → collections.abc、
+  f-string 无占位符、未使用的循环变量
+- Capability / Emotion 改用 StrEnum：**取字符串时行为有变**，
+  现在 str(Capability.EMOTION) 得到 \"emotion\" 而不是 \"Capability.EMOTION\"；
+  已确认没有调用方依赖旧写法"
 ```
 
-## 步骤 4/9 · 五个 ASR 引擎
+## ④ 清单自身
 
 ```bash
 git reset
-git add agentic_asr/engines/
-git commit -m "feat(engines): faster_whisper / sensevoice / minimax / openai_compat / mock
-
-- faster_whisper: 本地主力（实测显存 2.17GB、长音频 RTF 0.037、词级时间戳）
-- sensevoice: 情绪+事件走 sherpa-onnx 的 CPU，比 funasr 少 16 个包
-- minimax: 专用适配器（词级时间戳 + 说话人分离）
-- openai_compat: 一个适配器覆盖 OpenAI/Groq/硅基流动/OpenRouter
-- mock: 零依赖离线占位，支撑不加载权重的全链路测试"
-```
-
-## 步骤 5/9 · 五个功能模块
-
-```bash
-git reset
-git add agentic_asr/media/ agentic_asr/segment/ agentic_asr/subtitle/ agentic_asr/clip/
-git commit -m "feat: 音频信息提取、音频分段、字幕生成、参考音频截取
-
-- media/probe.py: ffprobe + 声学统计（估计 SNR 是降噪判据、语音占比是闸门判据）
-- segment/splitter.py: 静音点优先，超长回退固定时长
-- subtitle/segment.py: 六条切分规则（强/弱停顿、句末与次级标点、字数与时长上限）
-  + 数字保护 + 合并过短尾条；**异常单元钳制**把 ASR 塞进单个字的静音
-  还原成可见间隙（issues/007），否则字幕切不碎、一条挂十几秒
-- subtitle/render.py: SRT/VTT/ASS（含词级卡拉 OK），一律本地渲染
-- clip/picker.py: 五维打分挑 10~15s 参考音频；ref_text 必须来自该片段自身"
-```
-
-## 步骤 6/9 · 门面
-
-```bash
-git reset
-git add agentic_asr/asr.py
-git commit -m "feat: 门面 ASRModule 与幻觉闸门
-
-- 切片 + 时间轴平移 + _clamp 裁剪（Whisper 会给出超出音频长度的尾段时间戳）
-- 幻觉闸门：语音占比 + 压缩比双闸门，静音输入不进引擎（issues/002）
-- 情绪补齐：主力引擎不支持情绪时按段调情绪引擎"
-```
-
-## 步骤 7/9 · 三种入口
-
-```bash
-git reset
-git add agentic_asr/cli.py agentic_asr/__main__.py agentic_asr/server/ agentic_asr/gui/
-git commit -m "feat: CLI / HTTP / GUI
-
-- 三个入口共用同一个门面，每个功能都是独立命令 / 端点 / 面板
-- GUI 上传按 NiceGUI 3.x 的契约实现（issues/006）
-- /transcribe **不提供**「给字幕加说话人前缀」参数：说话人分离第一版只留能力位，
-  放一个不生效的参数会误导调用方"
-```
-
-## 步骤 8/9 · 测试与调研探针
-
-```bash
-git reset
-git add tests/ scripts/ docs/issues/
-git commit -m "test: 离线套件 + 真实模型用例 + 七个问题的回归
-
-- 每个 issues 单都有阈值故意写死的回归用例
-- test_subtitle.py: 数字不被切坏、只去开头悬挂标点、异常单元变成可见间隙、
-  max_seconds 真的兜得住时长
-- test_gui.py: 把 NiceGUI 3.x 的上传事件契约钉死（事件对象没有 name 字段）
-- scripts/_smoke_pipeline.py: 跨插件（分离 → ASR）端到端
-- scripts/_smoke_subtitle.py: 字幕切分的效果对比，调参数前先跑它"
-```
-
-## 步骤 9/9 · 使用与过程文档
-
-```bash
-git reset
-git add docs/02_dev_plan.md docs/03_unit_tests.md docs/04_api_reference.md \
-        docs/05_deployment.md docs/06_add_engine.md docs/07_gui_guide.md \
-        docs/08_git_commands.md docs/09_dev_log.md
-git commit -m "docs: 用法、部署、测试、扩展与开发记录
-
-- 04_api_reference: 库 / HTTP / CLI 完整接口参考
-- 05_deployment: 模型下载、GPU 前置（cublas）、8GB 显存策略
-- 02/09: 与计划的偏差（分离迁出、情绪走 sherpa、CUDA 隐式依赖、NiceGUI API）
-- 07_gui_guide: 界面用法与手工验证清单"
+git add docs/08_git_commands.md
+git commit -m "docs: 提交清单推进到模组解耦与字幕上限"
 ```
 
 ---
@@ -148,9 +111,6 @@ git commit -m "docs: 用法、部署、测试、扩展与开发记录
 ## 核对
 
 ```bash
-git status          # 应当干净
-git log --oneline   # 9 条提交
+git status --short      # 应当干净
+git log --oneline -6
 ```
-
-若仍有未提交文件，先判断它是不是本该被忽略的产物：
-`git status --ignored --short` 会列出来（`outputs/`、`models/` 属正常忽略）。
