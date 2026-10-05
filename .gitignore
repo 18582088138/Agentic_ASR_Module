@@ -1,0 +1,24 @@
+# 产物 / outputs —— 音频与字幕不进仓库
+outputs/
+*.wav
+*.mp3
+*.flac
+*.srt
+*.vtt
+*.ass
+
+# 模型权重 / model weights（体积大，从 HF / ModelScope / GitHub release 下载）
+models/
+!models/.gitkeep
+
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+.venv/
+.ruff_cache/
+
+# 密钥 / secrets
+.env

@@ -1,0 +1,68 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agentic-asr"
+version = "0.1.0"
+description = "可插拔的本地优先 ASR 服务插件：音频信息提取 / 音频分段 / 字幕生成 / 语音情绪识别 / 参考音频截取"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "Proprietary" }
+
+# ── 依赖为什么是这个形状 ──────────────────────────────────────────────
+# 1) faster-whisper 是本地主力，只带进 ctranslate2 + av + onnxruntime，**不碰 torch**。
+#    实测 `pip install faster-whisper` 只新增 2 个包（ctranslate2 / av）。
+# 2) 情绪与事件走 sherpa-onnx（CPU），实测其 from_sense_voice 原生返回
+#    emotion / event / lang 字段；比 funasr 少 16 个包。
+# 3) torch 不写进来：本项目的 ASR 主力（CTranslate2）与情绪（onnx）都不需要它。
+#    若要用 torch 后端做别的，用户自行装 CUDA 版。
+# 4) av 必须钉上界：av 19 移除了 metadata_errors，faster-whisper 1.2.1 会崩
+#    （见 docs/issues/001）。我们自己做解码，但保留这条安全网。
+dependencies = [
+    "numpy>=1.26",
+    "soundfile>=0.12",
+    "PyYAML>=6.0",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.4",
+    "typer>=0.12",
+    "rich>=13.0",
+    "requests>=2.31",
+
+    "faster-whisper>=1.2,<2",
+    "ctranslate2>=4.0,<5",
+    "av>=11,<19",
+
+    "sherpa-onnx>=1.13",
+]
+
+[project.optional-dependencies]
+server = ["fastapi>=0.115", "uvicorn>=0.30", "python-multipart>=0.0.9"]
+gui = ["nicegui>=2.0"]
+dev = ["pytest>=8.0", "httpx>=0.27", "ruff>=0.6"]
+# 一次装全 / everything at once
+all = ["agentic-asr[server,gui,dev]"]
+
+[project.scripts]
+asr = "agentic_asr.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["agentic_asr*"]
+
+[tool.pytest.ini_options]
+# 默认只跑离线用例：真实模型每条几十秒起，真实 API 还要花钱。
+# 手动跑：python -m pytest tests -q -m real   /   -m live
+addopts = "-m 'not real and not live'"
+markers = [
+    "real: 需要加载真实权重或真实 sherpa-onnx 模型的用例（手动触发）",
+    "live: 需要真实云 API 调用（会花钱，手动触发）",
+]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+ignore = ["E501"]
