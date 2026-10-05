@@ -1,0 +1,114 @@
+# 00 · 阶段汇总 / Stage summary
+
+## §〇 进度区（新会话先读这里）
+
+| 阶段 | 状态 | 产物 |
+|---|---|---|
+| 调研 | ✅ 完成 | `00_research.md`、`10_reference_research.md`（技术备查） |
+| 构建方案 | ✅ 完成 | `01_design.md` |
+| 方案讨论 & 调整 | ✅ 完成（两轮修订：新增音频分段；架构拆成两个平级插件） | — |
+| 开发 → 测试 → debug | ✅ **完成** | 代码 + `tests/` + `02_dev_plan.md` |
+| 文档收尾 | ✅ 完成 | `03`–`09` 全套 + 6 张 issue 单 |
+| 代码审阅 / git 提交 | ⏳ **等人工** | `08_git_commands.md`（分步指令） |
+| 真实素材验收 | ⏳ 等你拿实际素材跑 | 见下方「已知限制 ①」 |
+
+**当前状态**：本仓库（ASR 侧）开发已完成，闸口全绿。要数字请现跑：
+
+```bash
+python -m pytest tests -q            # 离线，秒级
+python -m pytest tests -q -m real    # 真实模型，约 1 分钟
+python tools/check.py                # 环境自检 + ruff + 全量测试
+```
+
+**下一步该做什么，取决于你是谁**：
+
+- **要提交**：按 `08_git_commands.md` 分步执行（AI 不碰 `git commit`）
+- **要验收**：拿真实素材跑一遍 `asr transcribe` / `asr clip`，
+  重点看「参考音频是否够干净」与「日语识别质量」
+- **要接着开发**：先读 `PROJECT_MEMORY.md`（环境与硬约束），
+  再读 `01_design.md`（分层边界）；**改代码前务必读 `.dsh/skills/agentic-asr-dev/SKILL.md`**
+
+---
+
+## 1 · 交付内容
+
+**两个平级的、可独立部署与调用的 Agent 插件**，本仓库是 ASR 侧：
+
+| 插件 | 仓库 | 包 | 功能 | 端口 |
+|---|---|---|---|---|
+| **ASR** | 本仓库 | `agentic_asr` | 音频信息提取 · 音频分段 · 字幕生成 · 语音情绪识别 · 参考音频截取 | 8301 / GUI 8401 |
+| 分离 | `F:\2026年\Agentic_VoiceSeparate_Module` | `agentic_separate` | 人声提取 · 背景音提取 · 主体人声去除 | 8302 / GUI 8402 |
+
+四种用法共用同一个门面：Python 库 · CLI(`asr …`) · HTTP · GUI。
+
+**两个插件互不依赖**，协作由调用方组合：
+
+```python
+vocals = SeparateModule().extract_vocals("demo.mp4")
+result = ASRModule().transcribe(vocals.stems["vocals"].path)
+```
+
+---
+
+## 2 · 关键决策（为什么是这样，而不是那样）
+
+| 决策 | 依据（权威在哪） |
+|---|---|
+| 本地主力用 **faster-whisper**，不用 Qwen3-ASR | `00_research.md §1`：`qwen-asr` 会把共享环境的 `transformers` 从 4.57.3 拉到 4.57.6，而 TTS 模块钉死了它 |
+| 情绪走 **sherpa-onnx（CPU）**，不用 funasr | `00_research.md §4.4`：原生返回 `emotion`/`event`/`lang`，比 funasr 少 16 个包，且不占显存 |
+| 自己写解码层，**引擎永不接收文件路径** | `issues/001`：faster-whisper 1.2.1 与 av 19 不兼容 |
+| 无语音输入**不进引擎** | `issues/002`：实测纯音乐会被编出「优优独播剧场」，且置信度 `p=1.000` |
+| 分离交给独立插件 | `02_dev_plan.md §1`：用户要求做成两个独立插件 |
+| 不内建「自动调用分离插件」 | `01_design.md §10.6`：分离质量差会让 WER 变差，不该替用户默认做这个决定 |
+
+---
+
+## 3 · 已记档的六个问题（都在 `issues/`，都有回归用例）
+
+| # | 一句话 | 陷阱性质 |
+|---|---|---|
+| 001 | faster-whisper 1.2.1 与 av 19 不兼容 | 必崩，好查 |
+| 002 | 纯音乐轨被编出假字幕 | **静默**，产出假内容 |
+| 003 | Silero VAD 必须分块喂 + 边喂边取 | **静默**，毁掉三处功能 |
+| 004 | GPU 推理隐式依赖 torch 被导入（CTranslate2 不带 cublas） | **环境相关**，同一脚本换个入口就崩 |
+| 005 | 分离轨道顺序不能硬编码（在分离插件仓库） | **静默**，方向判反 |
+| 006 | NiceGUI 3.x 的上传事件没有 `name` | 用户实测撞到 |
+
+---
+
+## 4 · 已知限制（新会话别当成 bug 去"修"）
+
+① **日语质量**：SenseVoice 与 MiniMax 都会把「持って**いけない**」漏成「持ってい**き**ない」，
+   只有 faster-whisper 是对的。这是模型特性，不是我们的 bug。
+
+② **主体与背景同时说话的重叠段无法完美分离** —— 技术天花板。交付措辞是
+   「显著衰减主体人声」而非「彻底移除」。
+
+③ **说话人分离（diarization）第一版只留能力位**，未启用；云端 MiniMax 会返回
+   `speaker` 字段，但那个以 JSON 透出、不参与字幕渲染。
+
+④ **降噪 / 去混响只留配置位**（`preprocess.denoise`，默认 `off`）。调研结论是
+   过度降噪会掉 WER，不该默认开。
+
+⑤ **Qwen3-ASR 未接入** —— 原因是依赖冲突（见 §2 第一条），不是没做。
+
+⑥ **分离对 ASR 的 WER 收益未量化**：合成素材的干扰太弱，需要真实影视素材复测。
+
+⑦ **两个 GUI 都没有浏览器自动化测试**：手工验证清单在 `07_gui_guide.md`。
+
+---
+
+## 5 · 关键文件指针
+
+| 想知道什么 | 看哪 |
+|---|---|
+| 环境、常用命令、硬约束 | `PROJECT_MEMORY.md` |
+| 改代码前必须知道的边界 | `.dsh/skills/agentic-asr-dev/SKILL.md` |
+| 为什么选这个模型（含实测数字） | `00_research.md` |
+| 分层、能力表、五个功能怎么落、验收标准 V1–V12 | `01_design.md` |
+| 库 / HTTP / CLI 怎么调 | `04_api_reference.md` |
+| 模型怎么下、GPU 前置条件 | `05_deployment.md` |
+| 怎么接一个新引擎 | `06_add_engine.md` |
+| 界面怎么用 | `07_gui_guide.md` |
+| 开发中与计划的偏差 | `02_dev_plan.md §3`、`09_dev_log.md` |
+| 降噪 / 说话人 / 配音技术栈（**仅备查**） | `10_reference_research.md` |
